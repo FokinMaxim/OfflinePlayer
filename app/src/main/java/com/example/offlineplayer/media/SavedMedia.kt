@@ -1,15 +1,16 @@
 package com.example.offlineplayer.media
 
+import androidx.compose.ui.graphics.Color
 import java.util.UUID
 
 /**
  * Одна скачанная единица медиа (видео, подкаст или музыка).
  *
  * Поля разбиты на три группы, как того требует задание:
- *  - обязательные без дефолта: [url], [type], [title];
- *  - обязательные с разумным дефолтом: [id], [isOnlyAudio], [progressSeconds],
- *    [downloadedAtEpochMillis], [downloadStatus], [isFavorite];
- *  - по-настоящему необязательные (nullable): [durationSeconds], [sourceTitle].
+ *  - обязательные без дефолта: [url], [title];
+ *  - обязательные с разумным дефолтом: [type], [id], [isOnlyAudio], [progressSeconds],
+ *    [downloadedAtEpochMillis], [downloadStatus], [isFavorite], [isWatched], [tagColor];
+ *  - по-настоящему необязательные (nullable): [durationSeconds], [sourceTitle], [watchByEpochMillis].
  */
 data class SavedMedia(
     val url: String,
@@ -22,10 +23,16 @@ data class SavedMedia(
     // Таймкод, на котором закончился последний просмотр/прослушивание.
     val progressSeconds: Int = 0,
     val durationSeconds: Int? = null,
-    val downloadedAtEpochMillis: Long = System.currentTimeMillis(), // доработать, реализовать чаерз Date
+    val downloadedAtEpochMillis: Long = System.currentTimeMillis(),
     val downloadStatus: DownloadStatus = DownloadStatus.Queued,
     val sourceTitle: String? = null,
-    val isFavorite: Boolean = false
+    val isFavorite: Boolean = false,
+    // "Дело сделано" для медиатеки: пользователь вручную отмечает, что досмотрел/дослушал.
+    val isWatched: Boolean = false,
+    // Цветовая метка/категория, выставляется пользователем на экране редактирования.
+    val tagColor: Color = Color.White,
+    // Дедлайн-аналог: дата, до которой хочется посмотреть/прослушать. Не путать с downloadedAtEpochMillis.
+    val watchByEpochMillis: Long? = null
 ) {
     init {
         require(url.isNotBlank()) { "url must not be blank" }

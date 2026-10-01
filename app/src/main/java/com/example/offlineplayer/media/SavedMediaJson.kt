@@ -1,5 +1,7 @@
 package com.example.offlineplayer.media
 
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
@@ -18,14 +20,19 @@ val SavedMedia.json: JSONObject
         put("progressSeconds", progressSeconds)
         put("downloadedAtEpochMillis", downloadedAtEpochMillis)
         put("isFavorite", isFavorite)
+        put("isWatched", isWatched)
         if (isOnlyAudio != (type != MediaType.Video)) {
             put("isOnlyAudio", isOnlyAudio)
         }
         if (downloadStatus != DownloadStatus.Queued) {
             put("downloadStatus", downloadStatus.name)
         }
+        if (tagColor != Color.White) {
+            put("tagColor", tagColor.toArgb())
+        }
         durationSeconds?.let { put("durationSeconds", it) }
         sourceTitle?.let { put("sourceTitle", it) }
+        watchByEpochMillis?.let { put("watchByEpochMillis", it) }
     }
 
 /**
@@ -68,6 +75,19 @@ fun SavedMedia.Companion.parse(json: JSONObject): SavedMedia? = runCatching {
 
     val sourceTitle = if (json.has("sourceTitle")) json.optString("sourceTitle") else null
     val isFavorite = json.optBoolean("isFavorite", false)
+    val isWatched = json.optBoolean("isWatched", false)
+
+    val tagColor = if (json.has("tagColor")) {
+        Color(json.optInt("tagColor", Color.White.toArgb()))
+    } else {
+        Color.White
+    }
+
+    val watchByEpochMillis = if (json.has("watchByEpochMillis")) {
+        json.optLong("watchByEpochMillis")
+    } else {
+        null
+    }
 
     SavedMedia(
         url = url,
@@ -80,7 +100,10 @@ fun SavedMedia.Companion.parse(json: JSONObject): SavedMedia? = runCatching {
         downloadedAtEpochMillis = downloadedAtEpochMillis,
         downloadStatus = downloadStatus,
         sourceTitle = sourceTitle,
-        isFavorite = isFavorite
+        isFavorite = isFavorite,
+        isWatched = isWatched,
+        tagColor = tagColor,
+        watchByEpochMillis = watchByEpochMillis
     )
 }.getOrNull()
 
