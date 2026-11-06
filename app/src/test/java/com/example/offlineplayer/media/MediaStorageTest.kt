@@ -5,11 +5,15 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
+import java.net.URI
 import java.util.UUID
 
 class MediaStorageTest {
 
     private fun tempFile(): File = File.createTempFile("media", ".json").apply { deleteOnExit() }
+
+    private fun media(url: String, type: MediaType, title: String) =
+        SavedMedia(url = URI.create(url), type = type, title = title)
 
     @Test
     fun `loading missing file results in empty list`() {
@@ -23,8 +27,8 @@ class MediaStorageTest {
     fun `save then load restores items`() {
         val file = tempFile()
         val storage = MediaStorage(file)
-        storage.add(SavedMedia(url = "https://youtu.be/1", type = MediaType.Video, title = "One"))
-        storage.add(SavedMedia(url = "https://youtu.be/2", type = MediaType.Music, title = "Two"))
+        storage.add(media("https://youtu.be/1", MediaType.Video, "One"))
+        storage.add(media("https://youtu.be/2", MediaType.Music, "Two"))
         storage.save()
 
         val reloaded = MediaStorage(file)
@@ -33,9 +37,24 @@ class MediaStorageTest {
     }
 
     @Test
+    fun `cyrillic title survives save and load`() {
+        val file = tempFile()
+        val storage = MediaStorage(file)
+        val russian = media("https://youtu.be/1", MediaType.Podcast, "Привет, мир — Ёж и ёлка")
+            .copy(sourceTitle = "Канал «Тест»")
+        storage.add(russian)
+        storage.save()
+
+        val reloaded = MediaStorage(file)
+        reloaded.load()
+
+        assertEquals(russian, reloaded.items.single())
+    }
+
+    @Test
     fun `adding item with existing id replaces it`() {
         val storage = MediaStorage(tempFile())
-        val original = SavedMedia(url = "https://youtu.be/1", type = MediaType.Video, title = "One")
+        val original = media("https://youtu.be/1", MediaType.Video, "One")
         storage.add(original)
         storage.add(original.copy(title = "One (updated)"))
 
@@ -46,7 +65,7 @@ class MediaStorageTest {
     @Test
     fun `removing by unknown id is a no-op`() {
         val storage = MediaStorage(tempFile())
-        storage.add(SavedMedia(url = "https://youtu.be/1", type = MediaType.Video, title = "One"))
+        storage.add(media("https://youtu.be/1", MediaType.Video, "One"))
         assertFalse(storage.remove(UUID.randomUUID()))
         assertEquals(1, storage.items.size)
     }
@@ -57,9 +76,11 @@ class MediaStorageTest {
         file.writeText(
             """
             [
-              {"url":"https://youtu.be/1","type":"Video","title":"Valid"},
-              {"type":"Video","title":"Missing url"},
-              {"url":"https://youtu.be/2","type":"NOT_A_TYPE","title":"Bad type"}
+              {"id":"11111111-1111-1111-1111-111111111111","url":"https://youtu.be/1","type":"Video","title":"Valid","downloadedAtEpochMillis":1700000000000},
+              {"id":"22222222-2222-2222-2222-222222222222","type":"Video","title":"Missing url","downloadedAtEpochMillis":1700000000000},
+              {"id":"33333333-3333-3333-3333-333333333333","url":"https://youtu.be/2","type":"NOT_A_TYPE","title":"Bad type","downloadedAtEpochMillis":1700000000000},
+              {"url":"https://youtu.be/3","type":"Video","title":"Missing id","downloadedAtEpochMillis":1700000000000},
+              {"id":"not-a-uuid","url":"https://youtu.be/4","type":"Video","title":"Bad id","downloadedAtEpochMillis":1700000000000}
             ]
             """.trimIndent()
         )
@@ -70,13 +91,14 @@ class MediaStorageTest {
     }
 
     @Test
-    fun `updateProgress replaces item immutably`() {
+    fun `updateProgress replaces item immutably and keeps duration`() {
         val storage = MediaStorage(tempFile())
-        val media = SavedMedia(url = "https://youtu.be/1", type = MediaType.Video, title = "One")
-        storage.add(media)
+        val original = media("https://youtu.be/1", MediaType.Video, "One")
+            .copy(position = Position(progressSeconds = 0, durationSeconds = 300))
+        storage.add(original)
 
-        assertTrue(storage.updateProgress(media.id, 120))
-        assertEquals(120, storage.items.single().progressSeconds)
-        assertEquals(0, media.progressSeconds)
+        assertTrue(storage.updateProgress(original.id, 120))
+        assertEquals(Position(progressSeconds = 120, durationSeconds = 300), storage.items.single().position)
+        assertEquals(0, original.position.progressSeconds)
     }
 }

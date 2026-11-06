@@ -12,6 +12,13 @@ import java.util.UUID
  *
  * [storageFile] должен указывать на файл внутри Context.filesDir приложения:
  * список скачанного — данные пользователя, их нельзя терять при очистке кэша.
+ *
+ * Компонент:
+ * - Вход: вызовы `add`, `remove`, `updateProgress`, `load`, `save`.
+ * - Выход: `items` (копия списка только для чтения), записи в лог.
+ * - Конфигурация: путь к файлу [storageFile].
+ * - Зависимости: логгер. Не потокобезопасен: ходить в него нужно из одного потока
+ *   (так и делает [com.example.offlineplayer.service.StorageLibraryService]).
  */
 class MediaStorage(private val storageFile: File) {
 
@@ -47,7 +54,10 @@ class MediaStorage(private val storageFile: File) {
             log.warn("updateProgress: {} not found", id)
             return false
         }
-        _items[index] = _items[index].copy(progressSeconds = progressSeconds.coerceAtLeast(0))
+        val media = _items[index]
+        _items[index] = media.copy(
+            position = media.position.copy(progressSeconds = progressSeconds.coerceAtLeast(0))
+        )
         log.debug("updateProgress: {} -> {}s", id, progressSeconds)
         return true
     }

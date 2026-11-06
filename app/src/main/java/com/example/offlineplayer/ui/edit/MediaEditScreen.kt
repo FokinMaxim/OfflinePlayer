@@ -29,6 +29,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -45,7 +46,9 @@ import androidx.compose.ui.tooling.preview.PreviewScreenSizes
 import androidx.compose.ui.unit.dp
 import com.example.offlineplayer.media.MediaType
 import com.example.offlineplayer.media.SavedMedia
+import com.example.offlineplayer.media.toMediaUriOrNull
 import com.example.offlineplayer.ui.theme.OfflinePlayerTheme
+import java.net.URI
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -61,36 +64,38 @@ private fun formatEpochMillis(epochMillis: Long): String =
     Instant.ofEpochMilli(epochMillis).atZone(ZoneId.systemDefault()).toLocalDate().format(dateFormatter)
 
 /**
- * Экран редактирования [SavedMedia]. Состояние хранится прямо здесь (своего ViewModel пока нет —
- * это тема следующих лекций), поля сохраняются через rememberSaveable, чтобы пережить поворот экрана.
+ * Экран редактирования [SavedMedia]; [initial] == null — создание новой записи.
+ * Про навигацию ничего не знает: выбор цвета открывается лямбдой [onPickColor], а результат
+ * возвращается параметром [pickedColor] и подтверждается через [onPickedColorConsumed].
+ * Состояние хранится здесь (своего ViewModel пока нет), поля переживают поворот через rememberSaveable.
  */
 @Composable
 fun MediaEditScreen(
-    initial: SavedMedia,
+    initial: SavedMedia?,
     onSave: (SavedMedia) -> Unit,
+    onPickColor: (current: Color) -> Unit,
+    pickedColor: Color?,
+    onPickedColorConsumed: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var title by rememberSaveable { mutableStateOf(initial.title) }
-    var url by rememberSaveable { mutableStateOf(initial.url) }
-    var type by rememberSaveable { mutableStateOf(initial.type) }
-    var isWatched by rememberSaveable { mutableStateOf(initial.isWatched) }
-    var tagColor by rememberSaveable(stateSaver = ColorSaver) { mutableStateOf(initial.tagColor) }
-    var customColor by rememberSaveable(stateSaver = ColorSaver) { mutableStateOf(initial.tagColor) }
-    var watchByEpochMillis by rememberSaveable { mutableStateOf(initial.watchByEpochMillis) }
-    var showColorPicker by rememberSaveable { mutableStateOf(false) }
+    var title by rememberSaveable { mutableStateOf(initial?.title.orEmpty()) }
+    var url by rememberSaveable { mutableStateOf(initial?.url?.toString().orEmpty()) }
+    var type by rememberSaveable { mutableStateOf(initial?.type ?: MediaType.Video) }
+    var isWatched by rememberSaveable { mutableStateOf(initial?.isWatched ?: false) }
+    var tagColor by rememberSaveable(stateSaver = ColorSaver) { mutableStateOf(initial?.tagColor ?: Color.White) }
+    var customColor by rememberSaveable(stateSaver = ColorSaver) { mutableStateOf(initial?.tagColor ?: Color.White) }
+    var watchByEpochMillis by rememberSaveable { mutableStateOf(initial?.watchByEpochMillis) }
 
-    if (showColorPicker) {
-        ColorPickerScreen(
-            initialColor = customColor,
-            onDone = { picked ->
-                customColor = picked
-                tagColor = picked
-                showColorPicker = false
-            },
-            modifier = modifier.fillMaxSize()
-        )
-        return
+    LaunchedEffect(pickedColor) {
+        if (pickedColor != null) {
+            customColor = pickedColor
+            tagColor = pickedColor
+            onPickedColorConsumed()
+        }
     }
+
+    val parsedUrl = url.toMediaUriOrNull()
+    val canSave = parsedUrl != null && title.isNotBlank()
 
     Column(
         modifier = modifier
@@ -111,7 +116,7 @@ fun MediaEditScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             GrowingTitleField(value = title, onValueChange = { title = it })
-            UrlField(value = url, onValueChange = { url = it })
+            UrlField(value = url, isError = parsedUrl == null, onValueChange = { url = it })
             WatchByDateField(
                 watchByEpochMillis = watchByEpochMillis,
                 onDateSelected = { watchByEpochMillis = it }
@@ -121,22 +126,31 @@ fun MediaEditScreen(
                 selectedColor = tagColor,
                 onColorSelected = { tagColor = it },
                 customPreviewColor = customColor,
-                onCustomColorLongPress = { showColorPicker = true }
+                onCustomColorLongPress = { onPickColor(customColor) }
             )
         }
 
         Button(
+            enabled = canSave,
             onClick = {
-                onSave(
-                    initial.copy(
+                parsedUrl?.let { validUrl ->
+                    val edited = initial?.copy(
                         title = title,
-                        url = url,
+                        url = validUrl,
+                        type = type,
+                        isWatched = isWatched,
+                        tagColor = tagColor,
+                        watchByEpochMillis = watchByEpochMillis
+                    ) ?: SavedMedia(
+                        title = title,
+                        url = validUrl,
                         type = type,
                         isWatched = isWatched,
                         tagColor = tagColor,
                         watchByEpochMillis = watchByEpochMillis
                     )
-                )
+                    onSave(edited)
+                }
             },
             modifier = Modifier.fillMaxWidth()
         ) {
@@ -157,11 +171,13 @@ private fun GrowingTitleField(value: String, onValueChange: (String) -> Unit) {
 }
 
 @Composable
-private fun UrlField(value: String, onValueChange: (String) -> Unit) {
+private fun UrlField(value: String, isError: Boolean, onValueChange: (String) -> Unit) {
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
         label = { Text("Ссылка") },
+        isError = isError,
+        supportingText = { if (isError) Text("Нужна ссылка вида https://…") },
         singleLine = true,
         modifier = Modifier.fillMaxWidth()
     )
@@ -296,7 +312,27 @@ private fun CustomColorSwatch(
 @Composable
 private fun MediaEditScreenPreview() {
     OfflinePlayerTheme {
-        MediaEditScreen(initial = SavedMedia(url = "https://youtu.be/abc", title = "Preview title"), onSave = {})
+        MediaEditScreen(
+            initial = SavedMedia(url = URI.create("https://youtu.be/abc"), title = "Preview title"),
+            onSave = {},
+            onPickColor = {},
+            pickedColor = null,
+            onPickedColorConsumed = {}
+        )
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun MediaEditScreenNewPreview() {
+    OfflinePlayerTheme {
+        MediaEditScreen(
+            initial = null,
+            onSave = {},
+            onPickColor = {},
+            pickedColor = null,
+            onPickedColorConsumed = {}
+        )
     }
 }
 
@@ -306,12 +342,15 @@ private fun MediaEditScreenAdaptivePreview() {
     OfflinePlayerTheme {
         MediaEditScreen(
             initial = SavedMedia(
-                url = "https://youtu.be/abc",
+                url = URI.create("https://youtu.be/abc"),
                 title = "Очень длинное название, которое должно переноситься на несколько строк и расширять поле ввода",
                 type = MediaType.Music,
                 isWatched = true
             ),
-            onSave = {}
+            onSave = {},
+            onPickColor = {},
+            pickedColor = null,
+            onPickedColorConsumed = {}
         )
     }
 }
